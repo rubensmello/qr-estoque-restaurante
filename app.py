@@ -6,6 +6,7 @@ import qrcode
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
 import streamlit as st
 
 # ---------------- CONFIGURAÇÃO DE PÁGINA ----------------
@@ -43,7 +44,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown('<div class="main-title">Gerador de QR Codes para Estoque</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="main-title">Gerador de QR Codes para Estoque</div>',
+    unsafe_allow_html=True,
+)
 st.markdown(
     '<div class="subtitle">Envie uma planilha com <b>código</b> e <b>produto</b>, gere os QR codes e baixe um PDF pronto para impressão.</div>',
     unsafe_allow_html=True,
@@ -103,7 +107,7 @@ def gerar_imagem_qr(codigo: str, produto: str, fonte_tamanho: int = 12) -> Image
 
     # Texto do produto
     y = 5
-    for i, linha in enumerate(linhas):
+    for linha in linhas:
         bbox = draw.textbbox((0, 0), linha, font=fonte)
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
@@ -165,8 +169,6 @@ def gerar_pdf(produtos_df: pd.DataFrame, itens_por_linha: int, fonte_tamanho: in
             x_atual = margem_x
             y_atual = page_height - margem_y
 
-        # reportlab precisa de um filename ou ImageReader; aqui convertemos o buffer
-        from reportlab.lib.utils import ImageReader
         img_reader = ImageReader(img_buffer)
 
         c.drawImage(
@@ -189,7 +191,10 @@ def gerar_pdf(produtos_df: pd.DataFrame, itens_por_linha: int, fonte_tamanho: in
 col_esq, col_dir = st.columns([1.2, 1])
 
 with col_esq:
-    st.markdown('<div class="section-title">1. Planilha de produtos</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">1. Planilha de produtos</div>',
+        unsafe_allow_html=True,
+    )
 
     modelo_df = pd.DataFrame({"codigo": [], "produto": []})
     modelo_csv = modelo_df.to_csv(index=False).encode("utf-8")
@@ -226,7 +231,10 @@ with col_esq:
         st.write("Pré-visualização dos dados:")
         st.dataframe(df.head(15), use_container_width=True)
 
-    st.markdown('<div class="section-title">2. Configurações de layout</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">2. Configurações de layout</div>',
+        unsafe_allow_html=True,
+    )
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -236,9 +244,14 @@ with col_esq:
             index=1,
         )
     with col_b:
-        fonte_tamanho = st.slider("Tamanho da fonte (nome/código)", 10, 20, 12)
+        fonte_tamanho = st.slider(
+            "Tamanho da fonte (nome/código)", 10, 20, 12
+        )
 
-    st.markdown('<div class="section-title">3. Ações</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">3. Ações</div>',
+        unsafe_allow_html=True,
+    )
 
     bt_col1, bt_col2, bt_col3 = st.columns(3)
     gerar_pdf_click = False
@@ -261,4 +274,55 @@ with col_esq:
 
     if gerar_click and st.session_state.df is not None:
         with st.spinner("Gerando QR codes em memória..."):
-            # Apenas garante que os
+            st.success(
+                f"{len(st.session_state.df)} itens prontos para gerar QR codes."
+            )
+
+    if gerar_pdf_click and st.session_state.df is None:
+        st.warning("Envie uma planilha antes de gerar o PDF.")
+
+    if gerar_pdf_click and st.session_state.df is not None:
+        with st.spinner("Gerando PDF com todos os QR codes..."):
+            pdf_bytes = gerar_pdf(
+                st.session_state.df,
+                itens_por_linha=itens_por_linha,
+                fonte_tamanho=fonte_tamanho,
+            )
+            st.session_state.pdf_bytes = pdf_bytes
+
+with col_dir:
+    st.markdown(
+        '<div class="section-title">Pré-visualização</div>',
+        unsafe_allow_html=True,
+    )
+
+    if st.session_state.df is None:
+        st.info("Envie uma planilha para visualizar alguns QR codes de exemplo.")
+    else:
+        preview_df = st.session_state.df.head(4)
+        preview_cols = st.columns(2)
+        idx = 0
+        for _, row in preview_df.iterrows():
+            codigo = str(row["codigo"])
+            produto = str(row["produto"])
+            img = gerar_imagem_qr(
+                codigo, produto, fonte_tamanho=fonte_tamanho
+            )
+
+            with preview_cols[idx % 2]:
+                st.image(
+                    img,
+                    caption=f"{codigo} - {produto}",
+                    use_column_width=True,
+                )
+            idx += 1
+
+    if st.session_state.pdf_bytes is not None:
+        st.markdown("### Download do PDF")
+        st.download_button(
+            label="⬇️ Baixar PDF gerado",
+            data=st.session_state.pdf_bytes,
+            file_name="qr_codes_estoque.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
